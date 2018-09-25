@@ -21,12 +21,13 @@ func main() {
 
 	realm := os.Getenv("REALM")
 	if realm == "" {
-		log.Panic("REALM is a required environment variable")
+		// log.Panic("REALM is a required environment variable")
 	}
 
 	udpPortStr := os.Getenv("UDP_PORT")
 	if udpPortStr == "" {
-		log.Panic("UDP_PORT is a required environment variable")
+		udpPortStr = "55071"
+		// log.Panic("UDP_PORT is a required environment variable")
 	}
 	udpPort, err := strconv.Atoi(udpPortStr)
 	if err != nil {

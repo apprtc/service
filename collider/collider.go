@@ -8,17 +8,20 @@ package collider
 
 import (
 	"crypto/tls"
-	"golang.org/x/net/websocket"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/websocket"
 )
 
 const registerTimeoutSec = 10
@@ -41,18 +44,21 @@ func NewCollider(rs string) *Collider {
 
 // Run starts the collider server and blocks the thread until the program exits.
 func (c *Collider) Run(p int, useTls bool) {
+	http.Handle("/html/", http.StripPrefix("/html/", http.FileServer(http.Dir("html"))))
+
 	http.Handle("/ws", websocket.Handler(c.wsHandler))
 	http.HandleFunc("/status", c.httpStatusHandler)
-	http.HandleFunc("/", c.httpHandler)
+	http.HandleFunc("/room", c.httpHandler)
+	http.HandleFunc("/join/", c.joinHandler)
 
 	var e error
 
 	pstr := ":" + strconv.Itoa(p)
 	if useTls {
-		config := &tls.Config {
+		config := &tls.Config{
 			// Only allow ciphers that support forward secrecy for iOS9 compatibility:
 			// https://developer.apple.com/library/prerelease/ios/technotes/App-Transport-Security-Technote/
-			CipherSuites: []uint16 {
+			CipherSuites: []uint16{
 				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -63,7 +69,7 @@ func (c *Collider) Run(p int, useTls bool) {
 			},
 			PreferServerCipherSuites: true,
 		}
-		server := &http.Server{ Addr: pstr, Handler: nil, TLSConfig: config }
+		server := &http.Server{Addr: pstr, Handler: nil, TLSConfig: config}
 
 		e = server.ListenAndServeTLS("/cert/cert.pem", "/cert/key.pem")
 	} else {
@@ -100,6 +106,8 @@ func (c *Collider) httpHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	w.Header().Add("Access-Control-Allow-Methods", "POST, DELETE")
 
+	fmt.Printf("url=%v", r.URL.Path)
+
 	p := strings.Split(r.URL.Path, "/")
 	if len(p) != 3 {
 		c.httpError("Invalid path: "+html.EscapeString(r.URL.Path), w)
@@ -130,6 +138,124 @@ func (c *Collider) httpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	io.WriteString(w, "OK\n")
+}
+
+// Params Params
+type Params struct {
+	IsInitiator      string `json:"is_initiator"`
+	RoomLink         string `json:"room_link"`
+	ClientID         string `json:"client_id"`
+	WsURL            string `json:"ws_url"`
+	WssURL           string `json:"wss_url"`
+	WsPostURL        string `json:"ws_post_url"`
+	WssPostURL       string `json:"wss_post_url"`
+	MediaConstraints string `json:"media_constraints"`
+	IsLoopback       string `json:"is_loopback"`
+	RoomID           string `json:"room_id"`
+}
+
+// {
+//     "params": {
+//         "is_initiator": "true",
+//         "room_link": "https://appr.tc/r/aaaa1",
+//         "version_info": "{\"gitHash\": \"20cdd7652d58c9cf47ef92ba0190a5505760dc05\", \"branch\": \"master\", \"time\": \"Fri Mar 9 17:06:42 2018 +0100\"}",
+//         "messages": [],
+//         "error_messages": [],
+//         "client_id": "95834280",
+//         "ice_server_transports": "",
+//         "bypass_join_confirmation": "false",
+//         "wss_url": "wss://apprtc-ws.webrtc.org:443/ws",
+//         "media_constraints": "{\"audio\": true, \"video\": true}",
+//         "include_loopback_js": "",
+//         "is_loopback": "false",
+//         "offer_options": "{}",
+//         "pc_constraints": "{\"optional\": []}",
+//         "pc_config": "{\"rtcpMuxPolicy\": \"require\", \"bundlePolicy\": \"max-bundle\", \"iceServers\": []}",
+//         "wss_post_url": "https://apprtc-ws.webrtc.org:443",
+//         "ice_server_url": "https://networktraversal.googleapis.com/v1alpha/iceconfig?key=AIzaSyAJdh2HkajseEIltlZ3SIXO02Tze9sO3NY",
+//         "warning_messages": [],
+//         "room_id": "aaaa1",
+//         "include_rtstats_js": "<script src=\"/js/rtstats.js\"></script><script src=\"/pako/pako.min.js\"></script>"
+//     },
+//     "result": "SUCCESS"
+// }
+
+// RoomInfo RoomInfo
+type RoomInfo struct {
+	Params Params `json:"params"`
+	Result string `json:"result"`
+}
+
+var src = rand.NewSource(time.Now().UnixNano())
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const (
+	letterIdxBits = 6                    // 6 bits to represent a letter index
+	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+)
+
+func RandStringBytesMaskImprSrc(n int) string {
+	b := make([]byte, n)
+	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
+	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = src.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			b[i] = letterBytes[idx]
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+
+	return string(b)
+}
+
+func (c *Collider) joinHandler(w http.ResponseWriter, r *http.Request) {
+	var room RoomInfo
+	room.Result = "SUCCESS"
+
+	var params Params
+	params.IsInitiator = "true"
+
+	fmt.Printf("url=%v", r.URL.Path)
+
+	p := strings.Split(r.URL.Path, "/")
+	fmt.Printf("url=%s", strings.Join(p, ","))
+	if len(p) < 3 {
+		c.httpError("Invalid path: "+html.EscapeString(r.URL.Path), w)
+		return
+	}
+	rid := p[2]
+	cid := ""
+
+	if len(p) >= 3 {
+		cid = p[3]
+	}
+	if cid == "" {
+		cid = RandStringBytesMaskImprSrc(10)
+	}
+
+	params.RoomLink = fmt.Sprintf("%s/r/%s", r.Host, rid)
+	params.ClientID = cid
+	params.WsURL = fmt.Sprintf("ws://%s/ws", r.Host)
+	params.WssURL = fmt.Sprintf("ws://%s/ws", r.Host)
+	params.WsPostURL = fmt.Sprintf("http://%s", r.Host)
+	params.WssPostURL = fmt.Sprintf("http://%s", r.Host)
+	params.MediaConstraints = "{\"audio\": true, \"video\": true}"
+	params.IsLoopback = "false"
+	params.RoomID = rid
+
+	room.Params = params
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(room); err != nil {
+		err = errors.New("Failed to encode to JSON: err=" + err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.dash.onHttpErr(err)
+	}
 }
 
 // wsHandler is a WebSocket server that handles requests from the WebSocket client in the form of:
