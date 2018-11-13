@@ -48,8 +48,9 @@ func (c *Collider) Run(p int, useTls bool) {
 
 	http.Handle("/ws", websocket.Handler(c.wsHandler))
 	http.HandleFunc("/status", c.httpStatusHandler)
-	http.HandleFunc("/room", c.httpHandler)
+	http.HandleFunc("/r", c.httpHandler)
 	http.HandleFunc("/join/", c.joinHandler)
+	http.HandleFunc("/params/", c.paramsHandler)
 
 	var e error
 
@@ -213,6 +214,69 @@ func RandStringBytesMaskImprSrc(n int) string {
 	return string(b)
 }
 
+// ConfParams ConfParams
+type ConfParams struct {
+	VersionInfo            string   `json:"version_info"`
+	ErrorMessages          []string `json:"error_messages"`
+	IceServerTransports    string   `json:"ice_server_transports"`
+	BypassJoinConfirmation string   `json:"bypass_join_confirmation"`
+	WssURL                 string   `json:"wss_url"`
+	MediaConstraints       string   `json:"media_constraints"`
+	IncludeLoopbackJS      string   `json:"include_loopback_js"`
+	IsLoopback             string   `json:"is_loopback"`
+	OfferOptions           string   `json:"offer_options"`
+	PcConstraints          string   `json:"pc_constraints"`
+	PcConfig               string   `json:"pc_config"`
+	WsPostURL              string   `json:"ws_post_url"`
+	WssPostURL             string   `json:"wss_post_url"`
+	IceServerURL           string   `json:"ice_server_url"`
+	WarningMessages        []string `json:"warning_messages"`
+	IncludeRtstatsJS       string   `json:"include_rtstats_js"`
+}
+
+/*
+{
+	"version_info": "{\"gitHash\": \"20cdd7652d58c9cf47ef92ba0190a5505760dc05\", \"branch\": \"master\", \"time\": \"Fri Mar 9 17:06:42 2018 +0100\"}",
+	"error_messages": [],
+	"ice_server_transports": "",
+	"bypass_join_confirmation": "false",
+	"wss_url": "wss://apprtc-ws.webrtc.org:443/ws",
+	"media_constraints": "{\"audio\": true, \"video\": {\"optional\": [{\"minWidth\": \"1280\"}, {\"minHeight\": \"720\"}], \"mandatory\": {}}}",
+	"include_loopback_js": "",
+	"is_loopback": "false",
+	"offer_options": "{}",
+	"pc_constraints": "{\"optional\": []}",
+	"pc_config": "{\"rtcpMuxPolicy\": \"require\", \"bundlePolicy\": \"max-bundle\", \"iceServers\": []}",
+	"wss_post_url": "https://apprtc-ws.webrtc.org:443",
+	"ice_server_url": "https://networktraversal.googleapis.com/v1alpha/iceconfig?key=AIzaSyAJdh2HkajseEIltlZ3SIXO02Tze9sO3NY",
+	"warning_messages": [],
+	"include_rtstats_js": ""
+}
+*/
+
+func (c *Collider) paramsHandler(w http.ResponseWriter, r *http.Request) {
+
+	var params ConfParams
+
+	params.VersionInfo = "v0.1"
+	params.WssURL = fmt.Sprintf("ws://%s/ws", r.Host)
+	params.WsPostURL = fmt.Sprintf("http://%s", r.Host)
+	params.WssPostURL = fmt.Sprintf("http://%s", r.Host)
+	params.MediaConstraints = "{\"audio\": true, \"video\": true}"
+	params.IsLoopback = "false"
+
+	params.OfferOptions = "{}"
+	params.PcConstraints = "{\"optional\": []}"
+	params.PcConfig = "{\"rtcpMuxPolicy\": \"require\", \"bundlePolicy\": \"max-bundle\", \"iceServers\": []}"
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(params); err != nil {
+		err = errors.New("Failed to encode to JSON: err=" + err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.dash.onHttpErr(err)
+	}
+}
+
 func (c *Collider) joinHandler(w http.ResponseWriter, r *http.Request) {
 	var room RoomInfo
 	room.Result = "SUCCESS"
@@ -220,7 +284,7 @@ func (c *Collider) joinHandler(w http.ResponseWriter, r *http.Request) {
 	var params Params
 	params.IsInitiator = "true"
 
-	fmt.Printf("url=%v", r.URL.Path)
+	fmt.Printf("url=%+v", r.URL)
 
 	p := strings.Split(r.URL.Path, "/")
 	fmt.Printf("url=%s", strings.Join(p, ","))
@@ -231,7 +295,7 @@ func (c *Collider) joinHandler(w http.ResponseWriter, r *http.Request) {
 	rid := p[2]
 	cid := ""
 
-	if len(p) >= 3 {
+	if len(p) > 3 {
 		cid = p[3]
 	}
 	if cid == "" {

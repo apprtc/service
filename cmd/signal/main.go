@@ -14,7 +14,7 @@ import (
 
 var tls = flag.Bool("tls", false, "whether TLS is used")
 var port = flag.Int("port", 55070, "The TCP port that the server listens on")
-var roomSrv = flag.String("room-server", "http://127.0.0.1:55070", "The origin of the room server")
+var roomSrv = flag.String("room-server", "http://192.168.48.185:55070", "The origin of the room server")
 
 func main() {
 	flag.Parse()
@@ -23,6 +23,7 @@ func main() {
 
 	log.Printf("demo=%s/html", *roomSrv)
 	log.Printf("status=%s/status", *roomSrv)
+	log.Printf("status=%s/params", *roomSrv)
 
 	c := collider.NewCollider(*roomSrv)
 	c.Run(*port, *tls)
